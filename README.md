@@ -1,6 +1,4 @@
-# CEval
-Counterfactual Generation Benchmark
-=======
+
 # Benchmarking for Counterfactual Text Generation
 
 **Setup:**
@@ -22,4 +20,4 @@ python metrics/LLMs_evaluation.py
 ```
 
 **Note:** The generated results required to reproduce the paper are available in the `results` folder. Simply utilize them and run the script to reproduce the paper.
->>>>>>> master
+
