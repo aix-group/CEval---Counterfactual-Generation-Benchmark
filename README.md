@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # CEval
 Counterfactual Generation Benchmark
 =======
