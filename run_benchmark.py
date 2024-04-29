@@ -146,11 +146,13 @@ if __name__ == '__main__':
         pred_orig_probs += F.softmax(logits, dim=1)
         diff_premise_probs =  [prob- float(tensor[label])  for tensor, prob, label in zip(pred_orig_probs, pred_edit_premise_probs, pred_edit_premise_labels)]
         diff_hypothesis_probs =  [prob- float(tensor[label])  for tensor, prob, label in zip(pred_orig_probs, pred_edit_hypo_probs, pred_edit_hypothesis_labels)]
-        orig_contrast_probs =  [float(tensor[label])  for tensor, label in zip(pred_orig_probs,  list_contrast_labels)]
+
+        
+        # orig_contrast_probs =  [float(tensor[label])  for tensor, label in zip(pred_orig_probs,  list_contrast_labels)]
         #plot
-        df['orig_contrast_probs'] = orig_contrast_probs
-        df['pred_edit_premise_probs'] = pred_edit_premise_probs
-        df['pred_edit_hypo_probs'] = pred_edit_hypo_probs
+        # df['orig_contrast_probs'] = orig_contrast_probs
+        # df['pred_edit_premise_probs'] = pred_edit_premise_probs
+        # df['pred_edit_hypo_probs'] = pred_edit_hypo_probs
 
         df['pred_orig_labels'] = pred_orig_labels
         df['pred_gen_premise_labels'] = pred_edit_premise_labels
