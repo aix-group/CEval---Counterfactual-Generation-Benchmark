@@ -1,4 +1,5 @@
 
+import argparse
 import transformers
 import torch
 import json
@@ -28,9 +29,10 @@ def cut_continuous_repetitions(string, max_repetitions):
 
 
 class LLMEvaluator:
-    def __init__(self, task, llm_model, list_methods, batch_size=20):
+    def __init__(self, task, method, llm_model, batch_size=20, temperature=0.7):
         
         self.task = task
+        self.method = method
         if self.task == "imdb":
             self.topic = "movie review"
         else:
@@ -42,22 +44,24 @@ class LLMEvaluator:
             self.client = OpenAI()
         else:
             self.model_name = "mistral"
+            self.llm_model = "mistralai/Mistral-7B-Instruct-v0.2"
             self.tokenizer = AutoTokenizer.from_pretrained(llm_model, padding_side="left")
             self.llm_pipeline = transformers.pipeline(
                 "text-generation",
-                model=llm_model,
+                model=self.llm_model,
                 torch_dtype=torch.float16,
                 device_map="auto",
                 tokenizer=self.tokenizer
             )
-        self.list_methods = list_methods
         self.batch_size = batch_size
+        self.temperature = temperature
         self._create_prompt()
     def _delayed_completion(self, **kwargs):
         rate_limit_per_minute = 500
         delay = 60.0 / rate_limit_per_minute
         time.sleep(delay)
         return self.client.chat.completions.create(**kwargs)
+    
     def _create_prompt(self):
         grammar_prompt = f"How grammatically correct is the {self.topic}? (on a scale of 1-5, with 1 being the lowest?)."
         cohesiveness_prompt= f"How well do the sentences in the {self.topic} fit together? (on a scale of 1-5, with 1 being the lowest?)."
@@ -72,196 +76,120 @@ class LLMEvaluator:
                         "cohesiveness": cohesiveness_prompt,
                         "likableness": like_prompt,
                         "fluency": fluency_prompt}
-    def evaluate_pair_text(self):
-        for method in self.list_methods:
-            print(f"{method}:")
+    def evaluate_text(self, df):
+        for k_question, question in self.dict_questions.items():
+            self.file_prompt = open(f"{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{date_string}.txt", 'a')
+            self.file_answer = open(f"{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{date_string}.txt", 'a')
+            if self.task == "imdb":
+                df = self.evaluate_single_text(df,k_question,question)
+            if self.task == "snli":
+                df = self.evaluate_pair_text(df,k_question,question)
+        df.to_csv(f"results/{self.task}/{self.method}/results_llm_{date_string}.csv", index = False) 
+    def gpt_evaluate(self, list_prompts, file_answer, list_scores):
+        for prompt in list_prompts:
+            prompts = [
+                {
+                "role": "user",
+                "content": prompt
+            }
+            ]
 
-            df = pd.read_csv(f"results/{self.task}/{method}/results.csv")
-            list_premise_gen = df['gen_premise'].to_list()
-            list_hypothesis_gen = df['gen_hypothesis'].to_list()
-            list_premise_orig = df['orig_premise'].to_list()
-            list_hypothesis_orig = df['orig_hypothesis'].to_list()
-            map_lists = {"premise_gen":zip(list_premise_gen, list_hypothesis_orig),
-                       "hypothesis_gen":zip(list_premise_orig, list_hypothesis_gen)}
-            for k_question in self.dict_questions:
-                file_prompt = open(f"{self.task}_{k_question}_{method}_prompt_{self.model_name}_{date_string}.txt", 'a')
-                file_answer = open(f"{self.task}_{k_question}_{method}_answer_{self.model_name}_{date_string}.txt", 'a')
-                question = self.dict_questions[k_question]
-                for name in map_lists.keys():
-                    list_prompts  = []
-                    list_scores = []
-                    for i, (premise, hypothesis) in enumerate(map_lists[name]):
-                        if k_question == "fluency":
-                            prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question
-                        else:
-                            prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question 
-                        prompt += f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score.\nScore:"
-                        file_prompt.write(f"{prompt}\n")
-                        list_prompts.append(prompt)
-                    if self.model_name != "gpt":
-                        sequences = self.llm_pipeline(
-                            list_prompts,
-                            do_sample=True,
-                            top_k=50,
-                            num_return_sequences=1,
-                            max_new_tokens=2,
-                            pad_token_id = self.tokenizer.eos_token_id,
-                            temperature = 0.7
-                        )
-                        for s in sequences:
-                            file_answer.write(f"{s[0]['generated_text'].split('The score is:')[1]}")
-                            try:
-                                list_scores.append(int(s[0]['generated_text'][-1]))
-                            except ValueError:
-                                print(f"{s[0]['generated_text']}")
-                                list_scores.append(-1)
-                    else:
-                        # stringifiedPromptsArray = json.dumps(list_prompts)
-                        for prompt in list_prompts:
-                            prompts = [
-                                {
-                                "role": "user",
-                                "content": prompt
-                            }
-                            ]
 
-                            print("ChatGPT: ")
-                            result = self._delayed_completion(model=self.llm_model,
-                                                                    messages=prompts,
-                                                                    max_tokens=2)
-                            raw_text = int(result.choices[0].message.content)
-                            file_answer.write(f"{raw_text}\n")
-                            list_scores.append(raw_text)
-                    df[f"{k_question}_{name}_{self.model_name}"] = list_scores
-            df.to_csv(f"results/{self.task}/{method}/results_llm_{date_string}.csv")
-    def evaluate_long_text(self):
-        for method in self.list_methods:
-            
-            print(f"{method}:")
-            df = pd.read_csv(f"results/{self.task}/{method}/results.csv")[:5]
-            
-            texts = df['gen_text'].to_list()
-            for k_question in self.dict_questions:
-                # if method != "llama" or  k_question != "cohesiveness":
-                #     continue
-                list_scores = []
-                file_prompt = open(f"{self.task}_{k_question}_{method}_prompt_{self.model_name}_{date_string}.txt", 'a')
-                file_answer = open(f"{self.task}_{k_question}_{method}_answer_{self.model_name}_{date_string}.txt", 'a')
-                question = self.dict_questions[k_question]
-                
-                
-                for batch_number, batch_texts in enumerate(zip_longest(*[iter(texts)] * self.batch_size)):
-                    text_list = ""
-                    list_prompts  = []
-                    for i, text in enumerate(batch_texts):
-                        # if (batch_number) * self.batch_size + i <=399:
-                        #     continue
-                        if text is None:
-                            continue
-                        # text_list += f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n"
-                        if k_question == "fluency":
-                            prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
-                        else:
-                            prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
-                        file_prompt.write(f"{prompt}\n")
-                        list_prompts.append(prompt)
-                    # if text_list == "":
-                    #     continue
-                    # Example usage:
-                    # input_text = "This is an example sentence."
-                    # t)
-                    # prompt = start_prompt + text_list + question
-                        
+            result = self.client.chat.completions.create(model=self.llm_model,
+                                                    messages=prompts,
+                                                    max_tokens=2,
+                                                    temperature = self.temperature)
+            raw_text = int(result.choices[0].message.content)
+            file_answer.write(f"{raw_text}\n")
+            list_scores.append(raw_text)
+        return list_scores
+    def llm_hf_evaluate(self,list_prompts, file_answer, list_scores):
+        sequences = self.llm_pipeline(
+            list_prompts,
+            do_sample=True,
+            top_k=50,
+            num_return_sequences=1,
+            max_new_tokens=2,
+            pad_token_id = self.tokenizer.eos_token_id,
+            temperature = self.temperature
+        )
+        for s in sequences:
+            file_answer.write(f"{s[0]['generated_text'].split('The score is:')[1]}")
+            try:
+                list_scores.append(int(s[0]['generated_text'][-1]))
+            except ValueError:
+                print(f"{s[0]['generated_text']}")
+                list_scores.append(-1)
+        return list_scores
+    def evaluate_pair_text(self,df, k_question, question):
+        map_lists = {"premise_gen":zip(df['gen_premise'], df['orig_hypothesis']),
+                    "hypothesis_gen":zip(df['orig_premise'], df['gen_hypothesis'])}
+        
+        for name,pairs in map_lists.items():
+            list_prompts  = []
+            list_scores = []
+            for i, (premise, hypothesis) in enumerate(pairs):
+                if k_question == "fluency":
+                    prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question
+                else:
+                    prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question 
+                prompt += f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score.\nScore:"
+                self.file_prompt.write(f"{prompt}\n")
+                list_prompts.append(prompt)
+            if self.model_name != "gpt":
+                list_scores = self.llm_hf_evaluate(list_prompts,self.file_answer, list_scores)
+            else:
+                list_scores = self.gpt_evaluate(list_prompts, self.file_answer, list_scores)
                     
-                    device = "cuda" # the device to load the model onto
-                    
-                    # max_repetitions = 6
-                    # text_list = cut_continuous_repetitions(text_list, max_repetitions)
-                    if self.model_name != "gpt":
-                        sequences = self.llm_pipeline(
-                            list_prompts,
-                            do_sample=True,
-                            top_k=50,
-                            num_return_sequences=1,
-                            max_new_tokens=2,
-                            pad_token_id = self.tokenizer.eos_token_id,
-                            temperature = 0.7
-                        )
-                        for s in sequences:
-                            file_answer.write(f"{s[0]['generated_text'].split('The score is:')[1]}")
-                            try:
-                                list_scores.append(int(s[0]['generated_text'][-1]))
-                            except ValueError:
-                                list_scores.append(-1)
-                    else:
-                        for prompt in list_prompts:
-                        # print(promptsArray)
-                            if k_question == "fluency":
-                                prompt =  self.start_fluency_prompt + text_list + question 
-                            else:
-                                prompt =  self.start_prompt + text_list + question
-                            prompt += f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score.\nScore:"
-                        #     {
-                        #     "role": "user",
-                        #     "content": stringifiedPromptsArray
-                        # }
-                        # ]
-                            prompts =  [
-                                {
-                                "role": "user",
-                                "content": prompt
-                            }
-                            ]
+            df[f"{k_question}_{name}_{self.model_name}"] = list_scores
+    def evaluate_single_text(self,df, k_question, question):
+        
+        texts = df['gen_text'].to_list()    
+        list_scores = []
+        for batch_number, batch_texts in enumerate(zip_longest(*[iter(texts)] * self.batch_size)):
+            list_prompts  = []
+            for i, text in enumerate(batch_texts):
+                if text is None:
+                    continue
+                if k_question == "fluency":
+                    prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
+                else:
+                    prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
+                self.file_prompt.write(f"{prompt}\n")
+                list_prompts.append(prompt)
+            if self.model_name != "gpt":
+                list_scores = self.llm_hf_evaluate(list_prompts,self.file_answer, list_scores)
+            else:
+                list_scores = self.gpt_evaluate(list_prompts, self.file_answer, list_scores)
 
-                            results = self._delayed_completion(model=self.llm_model,
-                                                                    messages=prompts,
-                                                                    max_tokens=2,
-                                                                    temperature=0.7)
-                            raw_text = int(results.choices[0].message.content)
-                            # batchCompletion = json.loads(stringifiedBatchCompletion.choices[0].message.content)
-                            
-                            file_answer.write(f"{raw_text}\n")
+        score_column = f"{k_question}_score_{self.model_name}"
+        df[score_column] = list_scores
+        temp_df = df[df[score_column] != -1]
+        mean_score = temp_df[score_column].mean()
+        print(f"{score_column}: {mean_score}")
+def get_args():
+    # Create the argument parser
+    parser = argparse.ArgumentParser(description="LLMs evaluation")
 
-                            # Split the string into lines
-                            # reviews_list = raw_text.split('\n')
+    # Add positional arguments
+    parser.add_argument("-method", required=True, help="results of method for evaluation")
+    parser.add_argument("-task", required=True, help="Name of the task. Currently, only IMDB and SNLI are supported.", choices=['imdb', 'snli'])
 
-                            # Extract the score from each line and store in a list
-                            # scores_list = [int(review.split(': ')[1]) for review in reviews_list if review]
-                            # scores_list = [int(review) for review in reviews_list if review]
+    # Add optional arguments
+    parser.add_argument("-batch_size", type=int, default=100, help="Batch size for evaluation.")
+    parser.add_argument("-temperature", type=int, default=0.2, help="Temperature for evaluation.")
+    parser.add_argument("-llm_model", required=True, help="choose model used for evaluation", choices=['gpt', 'mistral'])
 
-                            # Add to final list
-                            list_scores.append(raw_text )
-
-                    # print(batchCompletion)
-                    # completion = delayed_completion(
-                    #     delay_in_seconds=delay,
-                    #     model="gpt-3.5-turbo-1106",
-                    #     messages=[
-                    #         {"role": "user", "content": prompts}
-                    #     ],
-                    #     temperature = 1
-                    # )
-                    # file_answer.write(f"{completion.choices[0].message.content}\n")
-                    # print(completion.choices[0].message.content)
-                score_column = f"{k_question}_score_{self.model_name}"
-                df[score_column] = list_scores
-                temp_df = df[df[score_column] != -1]
-                mean_score = temp_df[score_column].mean()
-                print(f"{score_column}: {mean_score}")
-            df.to_csv(f"results/{self.task}/{method}/results_llm_{date_string}.csv", index = False) 
+    # Parse the command line arguments
+    args = parser.parse_args()
+    return args
 if __name__ == '__main__':
-    #create prompt for the dataset
-    
+    args = get_args()
+    llm_eval  = LLMEvaluator(args.task, args.method, args.llm_model, args.batch_size, args.temperature)
+    print(f"{args.method}:")
+    df = pd.read_csv(f"results/{args.task}/{args.method}/results.csv")
+    llm_eval.evaluate_text(df)
 
-    
-    # Append text to the file
-    # list_methods = ["crest"]
-    list_methods = ["llama","human_crowd","mice"]
-    # llm_eval  = LLMEvaluator("snli", "mistralai/Mistral-7B-Instruct-v0.2", list_methods, 100)
-    llm_eval  = LLMEvaluator("imdb", "gpt", list_methods, 20)
-    llm_eval.evaluate_long_text()
-    # llm_eval.evaluate_pair_text()
-    # evaluate_long_text(list_methods, batch_size=20, model="gpt")
     
     
     

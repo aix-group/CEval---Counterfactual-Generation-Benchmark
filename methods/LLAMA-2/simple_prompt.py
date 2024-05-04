@@ -4,43 +4,126 @@ import transformers
 import torch
 import time
 import re
+import argparse
+from datetime import datetime
+current_date = datetime.now()
+date_string = current_date.strftime("%Y%m%d%H%M%S")
+def create_prompt_snli(example, target_sentence):
+    example_map = {
+        "neutral":{
+            "premise": "Seven people are riding bikes on a sandy track.",
+            "hypothesis": "The people are racing."
+        },
+        "entailment": {
+            "premise": "Seven people are racing bikes on a sandy track.",
+            "hypothesis": "People are riding bikes on a track."
+        },
+        "contradiction":{
+            "premise": "Seven people are repairing bikes on a sandy track.",
+            "hypothesis": "People are walking on a sandy track."
+        }
+    }
+
+    # example_map = {
+    #     "original_neutral": "The little boy in jean shorts kicks the soccer ball. A little boy is playing soccer outside.",
+    #     "hypothesis_entailment": "The little boy in jean shorts kicks the soccer ball. A little boy is playing soccer..",
+    #     "hypothesis_contradiction": "The little boy in jean shorts kicks the soccer ball. A little boy is playing cricket.",
+    #     "premise_contradiction": "The little boy in jean shorts kicks the soccer ball in the house.	A little boy is playing soccer outside.",
+    #     "premise_entailment": "The little boy in jean shorts kicks the soccer ball in the garden. A little boy is playing soccer outside."
+    #     ""
+    #     }
+    orig_input = eval(example['orig_input'])
+    sentence_1 = orig_input['sentence1']
+    sentence_2 = orig_input['sentence2']
+    orig_label = example['orig_pred']
+    target_label = example['new_pred']
+    if target_sentence == "premise":
+        temp = f"""Premise: {example_map[orig_label]['premise']}\nHypothesis: {example_map["neutral"]['hypothesis']}"""
+    else:
+        temp = f"""Premise: {example_map["neutral"]['premise']}\nHypothesis: {example_map[orig_label]['hypothesis']}"""
+
+#     template = f"""<s>[INST] <<SYS>>
+# Given two sentences (premise and hypothesis) and their original relation, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the target relation from the original one. Do not make any unnecessary changes.
+# <</SYS>>
+# Original relation: {orig_label}
+# {temp}
+        
+# Target relation: {target_label}
+# Edited {target_sentence}:[/INST]{example_map[target_label][target_sentence]} </s><s>[INST] 
+# Original relation: {orig_label}
+# Premise: {sentence_1}
+# Hypothesis: {sentence_2}
+# Target relation: {target_label}
+# Edited {target_sentence}:[/INST]"""
+    template = f"""Request:  Given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one. Do not make any unnecessary changes.
+Original relation: {orig_label}
+{temp}
+Target relation: {target_label}
+<new>(Edited {target_sentence}): {example_map[target_label][target_sentence]}</new>
+######End Example#######
+
+Request: Similarly, given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one.
+Original relation: {orig_label}
+[Start Original Text]
+Premise: {sentence_1}
+Hypothesis: {sentence_2}
+[End Original Text]
+Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make sure the change is minimal.
+Target relation: {target_label}
+(Edited {target_sentence}):"""
+#     template = f"""In the task of snli, a trained black-box classifier correctly predicted the label {orig_label}
+# for the following text. Generate a counterfactual explanation by making minimal changes to the input text,
+# so that the label changes from {orig_label} to {target_label}. Use the following definition of ‘counterfactual explanation’:
+# “A counterfactual explanation reveals what should have been different in an instance to observe a diverse
+# outcome." Enclose the generated text within <new> tags.\n—\nText: {sentence_1} {sentence_2}."""
+    return template
 def create_prompt(example):
     contrast_map = {"Positive": "Negative", "Negative": "Positive"}
     example_map = {
         "Negative": "Long, boring, blasphemous. Never have I been so glad to see ending credits roll.",
         "Positive": "Long, fascinating, soulful. Never have I been so sad to see ending credits roll."
                    }
-    orig_sent = example['Orig_Sent']
-    template = """Request: """
+    orig_sent = example['Sentiment']
     template = f"""Request: Given a piece of text with the original sentiment in the form of "Sentiment: Text". Change the text with minimal edits to get the target sentiment from the original sentiment. Do not make any unneccesary changes. For example:
-[Start Original Text]
 {orig_sent}: {example_map[orig_sent]}
-[End Original Text]
 Target: {contrast_map[orig_sent]}
-[Start Edited Text]
-{contrast_map[orig_sent]}: {example_map[contrast_map[orig_sent]]}
-[End Edited Text]
+<new>{contrast_map[orig_sent]}: {example_map[contrast_map[orig_sent]]}</new>
 ######End Example#######
-Now, similar to the example, given a piece of text below, please change the text with minimal edits to get the {contrast_map[orig_sent]} sentiment from the {orig_sent} sentiment. Do not make any unneccesary changes.
+Request: Similarly, given a piece of text below with the original sentiment in the form of "Sentiment: Text". Change the text with "minimal edits" to get the {contrast_map[orig_sent]} sentiment from the {orig_sent} sentiment. 
 [Start Original Text]
-{orig_sent}: {example['Orig_Inp']}
+{orig_sent}: {example['Text']}
 [End Original Text]
 Target: {contrast_map[orig_sent]}
-[Start Edited Text]
-{contrast_map[orig_sent]}:"""
+Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make as few edits as possible.
+"""
+    template = [{
+        "role": "user",
+        "content": template
+    }]
     return template
-if __name__ == '__main__':
+def get_args():
+    # Create the argument parser
+    parser = argparse.ArgumentParser(description="generate counterfactual")
 
+    # Add positional arguments
+    parser.add_argument("-task", required=True, help="Name of the task. Currently, only IMDB and SNLI are supported.", choices=['imdb', 'snli'])
+
+    # Add optional arguments
+    parser.add_argument("-batch_size", type=int, default=100, help="Batch size for evaluation.")
+    parser.add_argument("-temperature", type=float, default=0.2, help="Temperature for evaluation.")
+
+    # Parse the command line arguments
+    args = parser.parse_args()
+    return args
+if __name__ == '__main__':
+    args = get_args()
+    batch_size = args.batch_size
+    task = args.task
+    temperature = args.temperature
     llm_model = "meta-llama/Llama-2-7b-chat-hf"
-    # llm_model = "tiiuae/falcon-40b-instruct"
-    # sbert_model_name = "all-mpnet-base-v2"
-    # dev_pairs = pd.read_csv("datasets/imdb/paired/dev_pairs.csv")
-    # test_pairs = pd.read_csv("datasets/imdb/paired/test_paired.tsv", delimiter="\t")
-    # train_pairs = pd.read_csv("datasets/imdb/paired/train_paired.tsv", delimiter="\t")
-    # df_merge = pd.concat([train_pairs, test_pairs])
     # load dataset
-    df = pd.read_csv("datasets/imdb/merge.csv", delimiter="\t")
-    df = df.iloc[100:]
+    df = pd.read_csv("datasets/imdb/expert/test_original.tsv", delimiter="\t")
+    df['Text'] = df['Text'].apply(lambda x: x.replace("<br /><br />"," "))
     tokenizer = AutoTokenizer.from_pretrained(llm_model)
     llm_pipeline = transformers.pipeline(
         "text-generation",
@@ -57,23 +140,19 @@ if __name__ == '__main__':
     #generate sentiment embeddings for each sentiments:
 
     list_contrast_texts = []
-    list_prompts = []
+    # list_prompts = []
     # df_test = test_pairs
     #pick an instance
     # Specify the chunk size
-    chunk_size = 100
-    start_edited_pattern = r'\[Start Edited Text\](.*?)(?:\[End Edited Text\]|$)'
-    # Calculate the number of chunks
-    num_chunks = len(df) // chunk_size + 1
+    
+    start_edited_pattern = r'\<new\>(.*?)(?:\<\/new\>)'
     start_time = time.time()
-    for i in range(num_chunks):
-        start_idx = i * chunk_size
-        end_idx = (i + 1) * chunk_size
-        chunk = df.iloc[start_idx:end_idx]
+    for i in range(0, df.shape[0], batch_size):
+        batch = df.iloc[i:i+batch_size]
         list_chunk_prompts = []
-        for index, example in chunk.iterrows():
+        for index, example in batch.iterrows():
             prompt = create_prompt(example)
-            list_prompts.append(prompt)
+            # list_prompts.append(prompt)
             list_chunk_prompts.append(prompt)
         
         sequences = llm_pipeline(
@@ -82,51 +161,44 @@ if __name__ == '__main__':
             top_k=50,
             num_return_sequences=1,
             max_new_tokens=768,
-            eos_token_id=tokenizer.eos_token_id
+            temperature = temperature,
         )
-        # for seq in sequences:
-        #     # print(seq[0]['generated_text']) 
-        #     text = seq[0]['generated_text'].split("\n\n\n")[0]
-        #     with open(r'raw_text_imdb_llm_2.txt', 'a') as fp:
-        #         fp.write("[start]%s\n" % text)
-        #     text_split = text.split("(Edit Text)\n")
-        #     if len(text_split) == 3:
-        #         contrast_text = text_split[2].split("\n\n")[0][14:]
-        #     else:
-        #         #raise error
-        #         print("ERROR SUSPECT")
-        #         print(text)
-        #         contrast_text = text_split[2].split("\n\n")[0][14:]
-        #     list_contrast_texts.append(contrast_text)
+        
         for seq in sequences:
-            # print(seq[0]['generated_text']) 
-            text = seq[0]['generated_text']
-            with open(r'raw_text_imdb_llm_2.txt', 'a') as fp:
-                fp.write("[start]%s\n" % text)
+            prompt = seq[0]['generated_text'][0]['content']
+            answer = seq[0]['generated_text'][1]['content']
 
-        for seq in sequences:
-            text = seq[0]['generated_text'].split("######End Example#######")[1]
-            edited_match = re.search(start_edited_pattern, text, re.DOTALL)
+            #Write to file
+            with open(f"raw_text_{task}_llama_{date_string}.txt", 'a') as fp:
+                fp.write("[start prompt]%s[end prompt]\n" % prompt)
+                fp.write("[start answer]%s[end answer]\n" % answer)
+
+            #Extract answer
+            edited_match = re.search(start_edited_pattern, answer, re.DOTALL)
             if edited_match:
                 edited_text = edited_match.group(1).strip()
-                target_match = re.search(r'(?:Positive|Negative):(.*?)(?:\\n|$)', edited_text, re.DOTALL)
+                target_match = re.search(r'(?:Positive|Negative): (.*?)(?:\n|$)', edited_text, re.DOTALL)
                 if target_match:
                     contrast_text = target_match.group(1).strip()
                 else:
-                    print(edited_text)
+                    print(answer)
                     contrast_text = None
             else:
-                print(text)
-                contrast_text = None
+                target_match = re.search(r'(?:Positive|Negative): (.*?)(?:\n|$)', answer)
+                if target_match:
+                    contrast_text = target_match.group(1).strip()
+                else:
+                    print(answer)
+                    contrast_text = None
 
             list_contrast_texts.append(contrast_text)
 
 
     end_time = time.time()
-    df['llama_text'] = list_contrast_texts
-    df.to_csv("imdb_llm_2.csv")
+    df[f"llama_text_{temperature}"] = list_contrast_texts
+    df.to_csv(f"llama_2_{task}_{temperature}_{date_string}.csv")
     duration = end_time - start_time
     print(duration)
-    with open(r'duration_llama_2.txt', 'w') as fp:
+    with open(f"llama_2_{date_string}.txt", 'w') as fp:
         fp.write("Duration: %s" % str(duration))
     

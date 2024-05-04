@@ -19,11 +19,7 @@ def create_prompt(example, target_sentence = "premise"):
             "hypothesis": "People are walking on a sandy track."
         }
     }
-    reason_map = {
-        "neutral":{
-            
-        }
-    }
+
     # example_map = {
     #     "original_neutral": "The little boy in jean shorts kicks the soccer ball. A little boy is playing soccer outside.",
     #     "hypothesis_entailment": "The little boy in jean shorts kicks the soccer ball. A little boy is playing soccer..",
@@ -55,24 +51,26 @@ def create_prompt(example, target_sentence = "premise"):
 # Hypothesis: {sentence_2}
 # Target relation: {target_label}
 # Edited {target_sentence}:[/INST]"""
-    template = f"""Given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one. Do not make any unnecessary changes.
+    template = f"""Request:  Given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one. Do not make any unnecessary changes.
 Original relation: {orig_label}
 {temp}
 Target relation: {target_label}
-(Edited {target_sentence}): {example_map[target_label][target_sentence]}
+<new>(Edited {target_sentence}): {example_map[target_label][target_sentence]}</new>
+######End Example#######
 
-
-Given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one. Do not make any unnecessary changes. Do not add anything else.
+Request: Similarly, given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one.
 Original relation: {orig_label}
+[Start Original Text]
 Premise: {sentence_1}
 Hypothesis: {sentence_2}
+[End Original Text]
+Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make sure the change is minimal.
 Target relation: {target_label}
 (Edited {target_sentence}):"""
-    template = f"""In the task of snli, a trained black-box classifier correctly predicted the label {orig_label}
-for the following text. Generate a counterfactual explanation by making minimal changes to the input text,
-so that the label changes from {orig_label} to {target_label}. Use the following definition of ‘counterfactual explanation’:
-“A counterfactual explanation reveals what should have been different in an instance to observe a diverse
-outcome." Enclose the generated text within <new> tags.\n—\nText: {sentence_1} {sentence_2}."""
+    template = [{
+        "role": "user",
+        "content": template
+    }]
     return template
 if __name__ == '__main__':
 
@@ -84,7 +82,7 @@ if __name__ == '__main__':
     # train_pairs = pd.read_csv("datasets/imdb/paired/train_paired.tsv", delimiter="\t")
     # df_merge = pd.concat([train_pairs, test_pairs])
     # load dataset
-    df = pd.read_csv("datasets/NLI/snli_mice_premise.csv", delimiter="\t")
+    df = pd.read_csv("cf_benchmark_submission/datasets/NLI/original/test.tsv", delimiter="\t")
     df = df.dropna(axis=0)
     df = df.groupby(['data_idx']).first()
     tokenizer = AutoTokenizer.from_pretrained(llm_model)
