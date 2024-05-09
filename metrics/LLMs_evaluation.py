@@ -9,6 +9,7 @@ import time
 from itertools import zip_longest
 from transformers import AutoTokenizer
 from datetime import datetime
+import httpx
 current_date = datetime.now()
 date_string = current_date.strftime("%Y%m%d%H%M%S")
 
@@ -45,7 +46,7 @@ class LLMEvaluator:
         else:
             self.model_name = "mistral"
             self.llm_model = "mistralai/Mistral-7B-Instruct-v0.2"
-            self.tokenizer = AutoTokenizer.from_pretrained(llm_model, padding_side="left")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.llm_model, padding_side="left")
             self.llm_pipeline = transformers.pipeline(
                 "text-generation",
                 model=self.llm_model,
@@ -69,22 +70,22 @@ class LLMEvaluator:
         fluency_prompt = f"Question: How natural and fluent the {self.topic}? (on a scale of 1-5, with 1 being the lowest)."
         self.label_prompt = f"How relevant is the {self.topic} to the label?"
         self.start_prompt = f"""The goal of this task is to rate a {self.topic}. 
-        Note: Please take the time to fully read and understand the {self.topic}. We will reject submissions from workers that are clearly spamming the task.
+Note: Please take the time to fully read and understand the {self.topic}. We will reject submissions from workers that are clearly spamming the task.
         """
-        self.start_fluency_prompt=f"You are given a list of {self.topic}s. Please read the {self.topic} and answer the question.\n{self.topic[0].capitalize() + self.topic[1:]}:\n"
+        self.start_fluency_prompt=f"You are given a list of {self.topic}s. Please read the {self.topic} and answer the question.\n"
         self.dict_questions = {"grammar":grammar_prompt,
                         "cohesiveness": cohesiveness_prompt,
                         "likableness": like_prompt,
                         "fluency": fluency_prompt}
     def evaluate_text(self, df):
         for k_question, question in self.dict_questions.items():
-            self.file_prompt = open(f"{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{date_string}.txt", 'a')
-            self.file_answer = open(f"{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{date_string}.txt", 'a')
+            self.file_prompt = open(f"raw_text/{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{self.temperature}_{date_string}.txt", 'a')
+            self.file_answer = open(f"raw_text/{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{self.temperature}_{date_string}.txt", 'a')
             if self.task == "imdb":
                 df = self.evaluate_single_text(df,k_question,question)
             if self.task == "snli":
                 df = self.evaluate_pair_text(df,k_question,question)
-        df.to_csv(f"results/{self.task}/{self.method}/results_llm_{date_string}.csv", index = False) 
+        df.to_csv(f"results/{self.task}/{self.method}/eval_{self.model_name}_{self.temperature}_{date_string}.csv", index = False) 
     def gpt_evaluate(self, list_prompts, file_answer, list_scores):
         for prompt in list_prompts:
             prompts = [
@@ -93,13 +94,33 @@ class LLMEvaluator:
                 "content": prompt
             }
             ]
-
-
-            result = self.client.chat.completions.create(model=self.llm_model,
-                                                    messages=prompts,
-                                                    max_tokens=2,
-                                                    temperature = self.temperature)
-            raw_text = int(result.choices[0].message.content)
+            count = 0
+            while True : 
+                if count >=5:
+                    raw_text = None
+                    break
+                try:
+                    result = self.client.chat.completions.create(model=self.llm_model,
+                                                            messages=prompts,
+                                                            max_tokens=1,
+                                                            temperature = self.temperature)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 400:
+                        raw_text = None
+                        print("BadRequestError: ", e)
+                        break
+                    else:
+                        print("An HTTP error occurred: ", e)
+                except Exception as e:
+                    raw_text = None
+                    print("An unexpected error occurred: ", e)
+                    break
+                try:
+                    raw_text = int(result.choices[0].message.content)
+                    break  # If the conversion is successful, break the loop
+                except ValueError:
+                    count+=1
+                    continue  # If the conversion fails, continue with the next iteration
             file_answer.write(f"{raw_text}\n")
             list_scores.append(raw_text)
         return list_scores
@@ -114,7 +135,7 @@ class LLMEvaluator:
             temperature = self.temperature
         )
         for s in sequences:
-            file_answer.write(f"{s[0]['generated_text'].split('The score is:')[1]}")
+            file_answer.write(f"{s[0]['generated_text'][-1]}")
             try:
                 list_scores.append(int(s[0]['generated_text'][-1]))
             except ValueError:
@@ -133,15 +154,20 @@ class LLMEvaluator:
                     prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question
                 else:
                     prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {i}:\n{premise} {hypothesis}\n" + question 
-                prompt += f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score.\nScore:"
+                prompt += f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score.\ The score is:"
                 self.file_prompt.write(f"{prompt}\n")
                 list_prompts.append(prompt)
             if self.model_name != "gpt":
                 list_scores = self.llm_hf_evaluate(list_prompts,self.file_answer, list_scores)
             else:
                 list_scores = self.gpt_evaluate(list_prompts, self.file_answer, list_scores)
-                    
-            df[f"{k_question}_{name}_{self.model_name}"] = list_scores
+            score_column = f"{k_question}_{name}_{self.model_name}_{self.temperature}"
+            df[score_column] = list_scores
+            temp_df = df[df[score_column] != -1]
+            temp_df = temp_df.dropna(axis=0)
+            mean_score = temp_df[score_column].mean()
+            print(f"{score_column}: {mean_score}")
+        return df
     def evaluate_single_text(self,df, k_question, question):
         
         texts = df['gen_text'].to_list()    
@@ -152,9 +178,9 @@ class LLMEvaluator:
                 if text is None:
                     continue
                 if k_question == "fluency":
-                    prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
+                    prompt =  self.start_fluency_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}.\nThe score is:"
                 else:
-                    prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"Ignore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}. The score is:"
+                    prompt =  self.start_prompt + f"{self.topic[0].capitalize() + self.topic[1:]} {(batch_number) * self.batch_size + i}:\n{text}\n" + question + f"\nIgnore errors related to uppercase and lowercase letters. Please only return a score for the {self.topic}.\nThe score is:"
                 self.file_prompt.write(f"{prompt}\n")
                 list_prompts.append(prompt)
             if self.model_name != "gpt":
@@ -162,11 +188,13 @@ class LLMEvaluator:
             else:
                 list_scores = self.gpt_evaluate(list_prompts, self.file_answer, list_scores)
 
-        score_column = f"{k_question}_score_{self.model_name}"
+        score_column = f"{k_question}_score_{self.model_name}_{self.temperature}"
         df[score_column] = list_scores
         temp_df = df[df[score_column] != -1]
+        temp_df = temp_df.dropna(axis=0)
         mean_score = temp_df[score_column].mean()
         print(f"{score_column}: {mean_score}")
+        return df
 def get_args():
     # Create the argument parser
     parser = argparse.ArgumentParser(description="LLMs evaluation")
@@ -177,7 +205,7 @@ def get_args():
 
     # Add optional arguments
     parser.add_argument("-batch_size", type=int, default=100, help="Batch size for evaluation.")
-    parser.add_argument("-temperature", type=int, default=0.2, help="Temperature for evaluation.")
+    parser.add_argument("-temperature", type=float, default=0.2, help="Temperature for evaluation.")
     parser.add_argument("-llm_model", required=True, help="choose model used for evaluation", choices=['gpt', 'mistral'])
 
     # Parse the command line arguments
@@ -188,6 +216,7 @@ if __name__ == '__main__':
     llm_eval  = LLMEvaluator(args.task, args.method, args.llm_model, args.batch_size, args.temperature)
     print(f"{args.method}:")
     df = pd.read_csv(f"results/{args.task}/{args.method}/results.csv")
+    df = df.dropna(axis=0)
     llm_eval.evaluate_text(df)
 
     

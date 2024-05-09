@@ -9,6 +9,7 @@ from datetime import datetime
 current_date = datetime.now()
 date_string = current_date.strftime("%Y%m%d%H%M%S")
 def create_prompt_snli(example, target_sentence):
+    #orig_pred,contrast_pred,orig_premise,orig_hypothesis,gen_premise,gen_hypothesis,pred_orig_labels,pred_gen_premise_labels,pred_gen_hypothesis_labels
     example_map = {
         "neutral":{
             "premise": "Seven people are riding bikes on a sandy track.",
@@ -32,11 +33,11 @@ def create_prompt_snli(example, target_sentence):
     #     "premise_entailment": "The little boy in jean shorts kicks the soccer ball in the garden. A little boy is playing soccer outside."
     #     ""
     #     }
-    orig_input = eval(example['orig_input'])
-    sentence_1 = orig_input['sentence1']
-    sentence_2 = orig_input['sentence2']
+    # orig_input = eval(example['orig_input'])
+    sentence_1 = example['orig_premise']
+    sentence_2 = example['orig_hypothesis']
     orig_label = example['orig_pred']
-    target_label = example['new_pred']
+    target_label = example['contrast_pred']
     if target_sentence == "premise":
         temp = f"""Premise: {example_map[orig_label]['premise']}\nHypothesis: {example_map["neutral"]['hypothesis']}"""
     else:
@@ -68,14 +69,17 @@ Original relation: {orig_label}
 Premise: {sentence_1}
 Hypothesis: {sentence_2}
 [End Original Text]
-Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make sure the change is minimal.
 Target relation: {target_label}
-(Edited {target_sentence}):"""
+Do not make any unneccesary changes. Enclose the generated sentence within <new> tags. Do not add anything else. Make as few edits as possible. Give me only the sentence with tags."""
 #     template = f"""In the task of snli, a trained black-box classifier correctly predicted the label {orig_label}
 # for the following text. Generate a counterfactual explanation by making minimal changes to the input text,
 # so that the label changes from {orig_label} to {target_label}. Use the following definition of ‘counterfactual explanation’:
 # “A counterfactual explanation reveals what should have been different in an instance to observe a diverse
 # outcome." Enclose the generated text within <new> tags.\n—\nText: {sentence_1} {sentence_2}."""
+    template = [{
+            "role": "user",
+            "content": template
+        }]
     return template
 def create_prompt(example):
     contrast_map = {"Positive": "Negative", "Negative": "Positive"}
@@ -122,8 +126,13 @@ if __name__ == '__main__':
     temperature = args.temperature
     llm_model = "meta-llama/Llama-2-7b-chat-hf"
     # load dataset
-    df = pd.read_csv("datasets/imdb/expert/test_original.tsv", delimiter="\t")
-    df['Text'] = df['Text'].apply(lambda x: x.replace("<br /><br />"," "))
+    if task == "imdb":
+        df = pd.read_csv(f"datasets/imdb/expert/test_original.tsv", delimiter="\t")
+        df['Text'] = df['Text'].apply(lambda x: x.replace("<br /><br />"," "))
+    else:
+        df = pd.read_csv(f"results/snli/mice/results.csv")
+        df = df[["orig_pred","contrast_pred","orig_premise","orig_hypothesis",]]
+        # df = df.iloc[:10]
     tokenizer = AutoTokenizer.from_pretrained(llm_model)
     llm_pipeline = transformers.pipeline(
         "text-generation",
@@ -139,66 +148,82 @@ if __name__ == '__main__':
 
     #generate sentiment embeddings for each sentiments:
 
-    list_contrast_texts = []
+    
     # list_prompts = []
     # df_test = test_pairs
     #pick an instance
     # Specify the chunk size
-    
+    max_new_token = 64 if task == "snli" else 768 
     start_edited_pattern = r'\<new\>(.*?)(?:\<\/new\>)'
+    
     start_time = time.time()
-    for i in range(0, df.shape[0], batch_size):
-        batch = df.iloc[i:i+batch_size]
-        list_chunk_prompts = []
-        for index, example in batch.iterrows():
-            prompt = create_prompt(example)
-            # list_prompts.append(prompt)
-            list_chunk_prompts.append(prompt)
-        
-        sequences = llm_pipeline(
-            list_chunk_prompts,
-            do_sample=True,
-            top_k=50,
-            num_return_sequences=1,
-            max_new_tokens=768,
-            temperature = temperature,
-        )
-        
-        for seq in sequences:
-            prompt = seq[0]['generated_text'][0]['content']
-            answer = seq[0]['generated_text'][1]['content']
-
-            #Write to file
-            with open(f"raw_text_{task}_llama_{date_string}.txt", 'a') as fp:
-                fp.write("[start prompt]%s[end prompt]\n" % prompt)
-                fp.write("[start answer]%s[end answer]\n" % answer)
-
-            #Extract answer
-            edited_match = re.search(start_edited_pattern, answer, re.DOTALL)
-            if edited_match:
-                edited_text = edited_match.group(1).strip()
-                target_match = re.search(r'(?:Positive|Negative): (.*?)(?:\n|$)', edited_text, re.DOTALL)
-                if target_match:
-                    contrast_text = target_match.group(1).strip()
+    target_sentences = ["premise", "hypothesis"] if task == "snli" else [None]
+    for target_sentence in target_sentences:
+        list_contrast_texts = []
+        if task == "imdb":
+            pattern_search = r'(?:Positive|Negative): (.*?)(?:\n|$)'
+        else:
+            pattern_search = rf"(?:\(Edited {target_sentence}\)): (.*?)(?:\n|$)"
+        for i in range(0, df.shape[0], batch_size):
+            batch = df.iloc[i:i+batch_size]
+            list_chunk_prompts = []
+            for index, example in batch.iterrows():
+                if task == "snli":
+                    prompt = create_prompt_snli(example, target_sentence)
                 else:
-                    print(answer)
-                    contrast_text = None
-            else:
-                target_match = re.search(r'(?:Positive|Negative): (.*?)(?:\n|$)', answer)
-                if target_match:
-                    contrast_text = target_match.group(1).strip()
+                    prompt = create_prompt(example)
+                # list_prompts.append(prompt)
+                list_chunk_prompts.append(prompt)
+            
+            sequences = llm_pipeline(
+                list_chunk_prompts,
+                do_sample=True,
+                top_k=50,
+                num_return_sequences=1,
+                max_new_tokens=max_new_token,
+                temperature = temperature,
+            )
+            
+            for seq in sequences:
+                prompt = seq[0]['generated_text'][0]['content']
+                answer = seq[0]['generated_text'][1]['content']
+
+                #Write to file
+                with open(f"raw_text_{task}_llama_{date_string}_{temperature}_{target_sentence}.txt", 'a') as fp:
+                    fp.write("[start prompt]%s[end prompt]\n" % prompt)
+                    fp.write("[start answer]%s[end answer]\n" % answer)
+
+                #Extract answer
+                edited_match = re.search(start_edited_pattern, answer, re.DOTALL)
+                if edited_match:
+                    edited_text = edited_match.group(1).strip()
+                    target_match = re.search(pattern_search, edited_text, re.DOTALL)
+                    if target_match:
+                        contrast_text = target_match.group(1).strip()
+                    else:
+                        contrast_text = edited_text
                 else:
-                    print(answer)
-                    contrast_text = None
+                    target_match = re.search(pattern_search, answer)
+                    if target_match:
+                        contrast_text = target_match.group(1).strip()
+                    else:
+                        print(answer)
+                        contrast_text = None
 
-            list_contrast_texts.append(contrast_text)
+
+                list_contrast_texts.append(contrast_text)
 
 
-    end_time = time.time()
-    df[f"llama_text_{temperature}"] = list_contrast_texts
-    df.to_csv(f"llama_2_{task}_{temperature}_{date_string}.csv")
+        end_time = time.time()
+        if target_sentence == None:
+            column_name = f"llama_text_{temperature}"   
+        else:
+            column_name = f"llama_text_{temperature}_{target_sentence}"
+        file_name = f"results/snli/llama/llama_2_{task}_{temperature}_{date_string}.csv"
+        df[column_name] = list_contrast_texts
+    
+    df.to_csv(file_name)
     duration = end_time - start_time
     print(duration)
     with open(f"llama_2_{date_string}.txt", 'w') as fp:
         fp.write("Duration: %s" % str(duration))
-    
