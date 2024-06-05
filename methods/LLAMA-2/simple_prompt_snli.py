@@ -55,7 +55,7 @@ def create_prompt(example, target_sentence = "premise"):
 Original relation: {orig_label}
 {temp}
 Target relation: {target_label}
-<new>(Edited {target_sentence}): {example_map[target_label][target_sentence]}</new>
+<new>Edited {target_sentence}: {example_map[target_label][target_sentence]}</new>
 ######End Example#######
 
 Request: Similarly, given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one.
@@ -64,9 +64,10 @@ Original relation: {orig_label}
 Premise: {sentence_1}
 Hypothesis: {sentence_2}
 [End Original Text]
-Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make sure the change is minimal.
 Target relation: {target_label}
-(Edited {target_sentence}):"""
+Do not make any unneccesary changes. Enclose the generated text within <new> tags. Do not add anything else. Make as few edits as possible.
+
+"""
     template = [{
         "role": "user",
         "content": template
@@ -82,9 +83,9 @@ if __name__ == '__main__':
     # train_pairs = pd.read_csv("datasets/imdb/paired/train_paired.tsv", delimiter="\t")
     # df_merge = pd.concat([train_pairs, test_pairs])
     # load dataset
-    df = pd.read_csv("cf_benchmark_submission/datasets/NLI/original/test.tsv", delimiter="\t")
-    df = df.dropna(axis=0)
-    df = df.groupby(['data_idx']).first()
+    df = pd.read_csv("datasets/snli/expert/test_original.tsv", delimiter="\t")
+    # df = df.dropna(axis=0)
+    # df = df.groupby(['data_idx']).first()
     tokenizer = AutoTokenizer.from_pretrained(llm_model)
     llm_pipeline = transformers.pipeline(
         "text-generation",
@@ -109,6 +110,7 @@ if __name__ == '__main__':
 
     # Calculate the number of chunks
     num_chunks = len(df) // chunk_size + 1
+    start_edited_pattern = r'\<new\>(.*?)(?:\<\/new\>)'
     start_time = time.time()
     for target_sentence in ["premise","hypothesis"]:
         list_texts = []

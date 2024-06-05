@@ -19,7 +19,7 @@ class Metrics:
         return results
     
 
-    def score_minimality(self, orig_sent: str, edited_sent: str, normalized: bool = True) -> float:
+    def score_minimality(self, orig_sent: str, edited_sent: str, normalized: bool = False) -> float:
         """
           Calculate Levenshtein distance(token-level) indicating the minimality of changes between two sentences.
 

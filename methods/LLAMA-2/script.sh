@@ -1,5 +1,5 @@
 #!/bin/bash
-arguments=(1 0.2)
+arguments=(0.6)
 python_file="methods/LLAMA-2/simple_prompt.py"
 
 additional_args=("-task" "imdb" "-batch_size" 100 "-temperature")

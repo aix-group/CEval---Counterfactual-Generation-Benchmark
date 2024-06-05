@@ -43,6 +43,7 @@ if __name__ == '__main__':
 
     #Load data
     df = pd.read_csv(args.path_csv)
+    df = df.dropna()
     # df = df[df['gen_text'] != "-1"]
     #Calculate metrics
     if args.task == "imdb":
@@ -91,11 +92,11 @@ if __name__ == '__main__':
         df['diff_probs'] = diff_probs
         df_contrast = df[df['pred_orig_labels'] != df['pred_gen_labels']]
         flip_rate = len(df_contrast) / len(df)
-        print(f"Flip Rate: {flip_rate*100}%")
+        print(f"Flip Rate: {round(flip_rate, 2)}")
         for name, df_temp in zip(["all","contrast"],[df, df_contrast]):
-            mean_distance = df_temp['distance'].mean()
-            mean_perplexity = df_temp['perplexity'].mean()
-            mean_diff_probs =  df_temp['diff_probs'].mean()
+            mean_distance = round(df_temp['distance'].mean(), 2)
+            mean_perplexity = round(df_temp['perplexity'].mean(), 2)
+            mean_diff_probs =  round(df_temp['diff_probs'].mean(), 2)
             
             print(f"Probability Change {name}: {mean_diff_probs}")  
             print(f"Token Distance {name}: {mean_distance}")
@@ -103,8 +104,10 @@ if __name__ == '__main__':
             if 'gen_text_2' in df:
                 df_temp = df_temp[df_temp['gen_text_2'] != "-1"]
                 df_temp = df_temp[df_temp['gen_text'] != "-1"]
-                mean_diversity =  df_temp['diversity'].mean()
-                print(f"Diversity {name}: {mean_diversity}") 
+                mean_diversity =  round(df_temp['diversity'].mean(), 2)
+                print(f"Diversity {name}: {mean_diversity}")
+            print("-----------")
+
             
     else:
         list_orig_premise = df['orig_premise'].to_list()
@@ -123,15 +126,19 @@ if __name__ == '__main__':
         pred_edit_premise_probs = []
         pred_edit_hypo_probs = []
         pred_orig_probs = []
-
-        inputs = tokenizer(list_orig_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        if "crest" in args.path_csv:
+            inputs = tokenizer(list_gen_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        else:
+            inputs = tokenizer(list_orig_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
         with torch.no_grad():
             logits = classifier(**inputs).logits
         predicted_class_ids = torch.argmax(logits, axis=1).tolist()
         pred_edit_hypo_probs = torch.max(F.softmax(logits, dim=1), axis=1).values.tolist()
         pred_edit_hypothesis_labels.extend(predicted_class_ids)
-
-        inputs = tokenizer(list_gen_premise,list_orig_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        if "crest" in args.path_csv:
+            inputs = tokenizer(list_gen_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        else:
+            inputs = tokenizer(list_gen_premise,list_orig_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
         with torch.no_grad():
             logits = classifier(**inputs).logits
         predicted_class_ids = torch.argmax(logits, axis=1).tolist()
@@ -169,23 +176,31 @@ if __name__ == '__main__':
         df_contrast_hypothesis= df[df['pred_orig_labels'] != df['pred_gen_hypothesis_labels']]
         flip_rate_premise = len(df_contrast_premise) / len(df)
         flip_rate_hypothesis = len(df_contrast_hypothesis) / len(df)
-        print(f"Flip Rate Premise: {flip_rate_premise*100}%")
-        print(f"Flip Rate Hypothesis: {flip_rate_hypothesis*100}%")
-        print(f"Flip Rate Both: {(flip_rate_premise + flip_rate_hypothesis)/2*100}%")
+        print(f"Flip Rate Premise: {round(flip_rate_premise, 2)}")
+        print(f"Flip Rate Hypothesis: {round(flip_rate_hypothesis, 2)}")
+        print(f"Flip Rate Both: {round((flip_rate_premise + flip_rate_hypothesis)/2*100, 2)}%")
         for name, df_temp in zip(["all","contrast"],[df, df_contrast_premise]):
-            mean_distance_premise = df_temp['distance_premise'].mean()
-            mean_perplexity_premise = df_temp['perplexity_gen_premise'].mean()
-            mean_diff_premise_probs=  df_temp['diff_premise_probs'].mean()
+            mean_distance_premise = round(df_temp['distance_premise'].mean(), 2)
+            mean_perplexity_premise = round(df_temp['perplexity_gen_premise'].mean(), 2)
+            mean_diff_premise_probs=  round(df_temp['diff_premise_probs'].mean(), 2)
             print(f"Probability Change Premise {name}: {mean_diff_premise_probs}")  
             print(f"Token Distance Premise {name}: {mean_distance_premise}")
-            print(f"Perplexity Premise{name}: {mean_perplexity_premise}") 
+            print(f"Perplexity Premise {name}: {mean_perplexity_premise}") 
             print("-----------")
         for name, df_temp in zip(["all","contrast"],[df, df_contrast_hypothesis]):
-            mean_distance_hypothesis = df_temp['distance_hypothesis'].mean()
-            mean_perplexity_hypothesis= df_temp['perplexity_gen_hypothesis'].mean()
-            mean_diff_hypothesis_probs=  df_temp['diff_hypothesis_probs'].mean()
+            mean_distance_hypothesis = round(df_temp['distance_hypothesis'].mean(), 2)
+            mean_perplexity_hypothesis= round(df_temp['perplexity_gen_hypothesis'].mean(), 2)
+            mean_diff_hypothesis_probs=  round(df_temp['diff_hypothesis_probs'].mean(), 2)
             print(f"Probability Change Hypothesis {name}: {mean_diff_hypothesis_probs}")  
             print(f"Token Distance Hypothesis {name}: {mean_distance_hypothesis}")
-            print(f"Perplexity Hypothesis{name}: {mean_perplexity_hypothesis}") 
+            print(f"Perplexity Hypothesis {name}: {mean_perplexity_hypothesis}")
+            print("-----------")
+        prob_all = round((df["diff_premise_probs"].mean()+ df["diff_hypothesis_probs"].mean())/2,2)
+        pp_all = round((df["perplexity_gen_premise"].mean()+ df["perplexity_gen_hypothesis"].mean())/2,2)
+        dist_all = round((df["distance_premise"].mean()+ df["distance_hypothesis"].mean())/2,2)
+        print(f"Probability changes both all: {prob_all}" )
+        print(f"Perplexity changes both all: {pp_all}" )
+        print(f"Distance both all: {dist_all}" )
+
     if args.return_csv:
-        df.to_csv(f"{args.path_csv.split('.')[0]}_addtional.csv", index=False)
+        df.to_csv(f"{args.path_csv.split('.')[0]}_auto_eval.csv", index=False)

@@ -219,7 +219,7 @@ if __name__ == '__main__':
             column_name = f"llama_text_{temperature}"   
         else:
             column_name = f"llama_text_{temperature}_{target_sentence}"
-        file_name = f"results/snli/llama/llama_2_{task}_{temperature}_{date_string}.csv"
+        file_name = f"results/{task}/llama/llama_2_{task}_{temperature}_{date_string}.csv"
         df[column_name] = list_contrast_texts
     
     df.to_csv(file_name)

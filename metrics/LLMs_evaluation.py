@@ -79,8 +79,8 @@ Note: Please take the time to fully read and understand the {self.topic}. We wil
                         "fluency": fluency_prompt}
     def evaluate_text(self, df):
         for k_question, question in self.dict_questions.items():
-            self.file_prompt = open(f"raw_text/{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{self.temperature}_{date_string}.txt", 'a')
-            self.file_answer = open(f"raw_text/{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{self.temperature}_{date_string}.txt", 'a')
+            self.file_prompt = open(f"raw_text/{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
+            self.file_answer = open(f"raw_text/{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
             if self.task == "imdb":
                 df = self.evaluate_single_text(df,k_question,question)
             if self.task == "snli":
@@ -143,9 +143,14 @@ Note: Please take the time to fully read and understand the {self.topic}. We wil
                 list_scores.append(-1)
         return list_scores
     def evaluate_pair_text(self,df, k_question, question):
-        map_lists = {"premise_gen":zip(df['gen_premise'], df['orig_hypothesis']),
-                    "hypothesis_gen":zip(df['orig_premise'], df['gen_hypothesis'])}
         
+        if self.method == "crest":
+            df['gen_premise'] = df['gen_text'].apply(lambda x: x.split(".")[0])
+            df['gen_hypothesis'] = df['gen_text'].apply(lambda x: x.split(".")[1])
+            map_lists = {"gen":zip(df['gen_premise'], df['gen_hypothesis'])}
+        else:
+            map_lists = {"premise_gen":zip(df['gen_premise'], df['orig_hypothesis']),
+                    "hypothesis_gen":zip(df['orig_premise'], df['gen_hypothesis'])}
         for name,pairs in map_lists.items():
             list_prompts  = []
             list_scores = []
