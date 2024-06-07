@@ -15,7 +15,7 @@ import argparse
 import math
 import jiwer
 import numpy as np
-from allennlp_utils import load_predictor
+# from allennlp_utils import load_predictor
 import os
 import warnings
 transformers.logging.set_verbosity(transformers.logging.ERROR)
@@ -58,70 +58,70 @@ def log_perplexity(logits, coeffs):
     shift_logits = shift_logits[:, :, :shift_coeffs.size(2)]
     return -(shift_coeffs * F.log_softmax(shift_logits, dim=-1)).sum(-1).mean()
 
-def load_predictor_test():
-    model_name = 'textattack/bert-base-uncased-imdb'
-    from allennlp.data.tokenizers.pretrained_transformer_tokenizer import PretrainedTransformerTokenizer
-    from allennlp.data.token_indexers.pretrained_transformer_indexer import PretrainedTransformerIndexer
+# def load_predictor_test():
+#     model_name = 'textattack/bert-base-uncased-imdb'
+#     from allennlp.data.tokenizers.pretrained_transformer_tokenizer import PretrainedTransformerTokenizer
+#     from allennlp.data.token_indexers.pretrained_transformer_indexer import PretrainedTransformerIndexer
 
-    transformer_tokenizer = PretrainedTransformerTokenizer(model_name)
-    token_indexer = PretrainedTransformerIndexer(model_name)
+#     transformer_tokenizer = PretrainedTransformerTokenizer(model_name)
+#     token_indexer = PretrainedTransformerIndexer(model_name)
 
-    from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
-    from allennlp.modules.token_embedders.pretrained_transformer_embedder import PretrainedTransformerEmbedder
+#     from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
+#     from allennlp.modules.token_embedders.pretrained_transformer_embedder import PretrainedTransformerEmbedder
 
-    token_embedder = BasicTextFieldEmbedder(
-        {
-            "tokens": PretrainedTransformerEmbedder(model_name)
-        })
-    from allennlp.modules.seq2vec_encoders.bert_pooler import BertPooler
+#     token_embedder = BasicTextFieldEmbedder(
+#         {
+#             "tokens": PretrainedTransformerEmbedder(model_name)
+#         })
+#     from allennlp.modules.seq2vec_encoders.bert_pooler import BertPooler
 
-    transformer_encoder = BertPooler(model_name)
-    from allennlp.common import cached_transformers
-    from allennlp.data.vocabulary import Vocabulary
-    namespace = "tokens"
-    tokenizer = cached_transformers.get_tokenizer(model_name)
+#     transformer_encoder = BertPooler(model_name)
+#     from allennlp.common import cached_transformers
+#     from allennlp.data.vocabulary import Vocabulary
+#     namespace = "tokens"
+#     tokenizer = cached_transformers.get_tokenizer(model_name)
 
-    if hasattr(tokenizer, "_unk_token"):
-        oov_token = tokenizer._unk_token
-    elif hasattr(tokenizer, "special_tokens_map"):
-        oov_token = tokenizer.special_tokens_map.get("unk_token")
-    vocab = Vocabulary(non_padded_namespaces=[namespace], oov_token=oov_token)
-    vocab_items = tokenizer.get_vocab().items()
-    for word, idx in vocab_items:
-        vocab._token_to_index[namespace][word] = idx
-        vocab._index_to_token[namespace][idx] = word
-    vocab._non_padded_namespaces.add(namespace)
+#     if hasattr(tokenizer, "_unk_token"):
+#         oov_token = tokenizer._unk_token
+#     elif hasattr(tokenizer, "special_tokens_map"):
+#         oov_token = tokenizer.special_tokens_map.get("unk_token")
+#     vocab = Vocabulary(non_padded_namespaces=[namespace], oov_token=oov_token)
+#     vocab_items = tokenizer.get_vocab().items()
+#     for word, idx in vocab_items:
+#         vocab._token_to_index[namespace][word] = idx
+#         vocab._index_to_token[namespace][idx] = word
+#     vocab._non_padded_namespaces.add(namespace)
 
-    from allennlp.modules.seq2vec_encoders.bert_pooler import BertPooler
+#     from allennlp.modules.seq2vec_encoders.bert_pooler import BertPooler
 
-    transformer_encoder = BertPooler(model_name).cuda()
+#     transformer_encoder = BertPooler(model_name).cuda()
 
-    from allennlp.models import BasicClassifier
+#     from allennlp.models import BasicClassifier
 
-    model = BasicClassifier(vocab=vocab,
-                            text_field_embedder=token_embedder,
-                            seq2vec_encoder=transformer_encoder,
-                            dropout=0.1,
-                            num_labels=2).cuda()
-    from transformers.models.auto import AutoConfig, AutoModelForSequenceClassification
-    from transformers.models.auto.tokenization_auto import AutoTokenizer
+#     model = BasicClassifier(vocab=vocab,
+#                             text_field_embedder=token_embedder,
+#                             seq2vec_encoder=transformer_encoder,
+#                             dropout=0.1,
+#                             num_labels=2).cuda()
+#     from transformers.models.auto import AutoConfig, AutoModelForSequenceClassification
+#     from transformers.models.auto.tokenization_auto import AutoTokenizer
 
-    # model_uri = 'nlptown/bert-base-multilingual-uncased-sentiment'
+#     # model_uri = 'nlptown/bert-base-multilingual-uncased-sentiment'
 
-    config = AutoConfig.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    classifier = AutoModelForSequenceClassification.from_pretrained(model_name, config=config).cuda()
+#     config = AutoConfig.from_pretrained(model_name)
+#     tokenizer = AutoTokenizer.from_pretrained(model_name)
+#     classifier = AutoModelForSequenceClassification.from_pretrained(model_name, config=config).cuda()
 
-    model._classification_layer.weight = classifier.classifier.weight
-    model._classification_layer.bias = classifier.classifier.bias
-    from allennlp.data.dataset_readers import TextClassificationJsonReader
+#     model._classification_layer.weight = classifier.classifier.weight
+#     model._classification_layer.bias = classifier.classifier.bias
+#     from allennlp.data.dataset_readers import TextClassificationJsonReader
 
-    dataset_reader = TextClassificationJsonReader(token_indexers={"tokens": token_indexer},
-                                                  tokenizer=transformer_tokenizer,
-                                                  max_sequence_length=512)
-    from allennlp.predictors import TextClassifierPredictor
-    predictor = TextClassifierPredictor(model, dataset_reader)
-    return predictor
+#     dataset_reader = TextClassificationJsonReader(token_indexers={"tokens": token_indexer},
+#                                                   tokenizer=transformer_tokenizer,
+#                                                   max_sequence_length=512)
+#     from allennlp.predictors import TextClassifierPredictor
+#     predictor = TextClassifierPredictor(model, dataset_reader)
+#     return predictor
 def main(args):
     # print(os.environ['HUGGINGFACE_HUB_CACHE'])
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -136,18 +136,21 @@ def main(args):
     # Load dataset
     import datasets
     dataset, num_labels = load_data(args)
-    df = pd.read_csv("datasets/merge.csv", delimiter="\t")
-    df = df.iloc[100:]
-    df = df[["Orig_Inp", "Orig_Sent"]]
-    df.rename(columns={"Orig_Inp": "text",
-                       "Orig_Sent": "label"}, inplace=True)
+    df = pd.read_csv("../../results/snli/gbda/results.csv")
+    # df = df[["orig_premise", "orig_hypothesis"]]
+    df.rename(columns={"orig_premise": "premise",
+                       "orig_hypothesis": "hypothesis"}, inplace=True)
+    # df = df.iloc[100:]
+    # df = df[["Orig_Inp", "Orig_Sent"]]
+    # df.rename(columns={"Orig_Inp": "text",
+    #                    "Orig_Sent": "label"}, inplace=True)
     # df = pd.read_csv("datasets/test.tsv", delimiter="\t")
     # df = df[["Orig_Inp", "Orig_Sent"]]
     # df.rename(columns={"sentence1": "premise",
     #                    "sentence2": "hypothesis",
     #                    "gold_label": "label"},inplace=True)
-    # df['label'] = df['label'].map({"entailment":1, "contradiction":0, "neutral": 2})
-    df['label'] = df['label'].map({"Positive":1, "Negative":0})
+    df['label'] = df['pred_orig_labels'].map({"entailment":1, "contradiction":0, "neutral": 2})
+    # df['label'] = df['label'].map({"Positive":1, "Negative":0})
     ds = datasets.Dataset.from_pandas(df)
     test_key = "validation_%s" % args.mnli_option
     dataset[test_key] = ds
@@ -181,13 +184,13 @@ def main(args):
         tokenizer.padding_side = "right"
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
-    if args.model == 'roberta':
-        # ref_model = AutoModelForCausalLM.from_pretrained("roberta-base", output_hidden_states=True).cuda()
-        # ref_model = load_gpt2_from_dict("%s/transformer_wikitext-103.pth" % args.gpt2_checkpoint_folder,
-        #                                 output_hidden_states=True).cuda()
-        ref_model = AutoModelForCausalLM.from_pretrained(
-            "/home/nguyenv9/transformers/examples/pytorch/language-modeling/tmp/gpt2-roberta",
-            output_hidden_states=True).cuda()
+    # if args.model == 'roberta':
+    #     # ref_model = AutoModelForCausalLM.from_pretrained("roberta-base", output_hidden_states=True).cuda()
+    #     # ref_model = load_gpt2_from_dict("%s/transformer_wikitext-103.pth" % args.gpt2_checkpoint_folder,
+    #     #                                 output_hidden_states=True).cuda()
+    #     ref_model = AutoModelForCausalLM.from_pretrained(
+    #         "/home/nguyenv9/transformers/examples/pytorch/language-modeling/tmp/gpt2-roberta",
+    #         output_hidden_states=True).cuda()
     elif 'bert-base-uncase' in args.model:
         # for BERT, load GPT-2 trained on BERT tokenizer
         ref_model = load_gpt2_from_dict("%s/transformer_wikitext-103.pth" % args.gpt2_checkpoint_folder, output_hidden_states=True).cuda()
@@ -242,7 +245,7 @@ def main(args):
     assert args.start_index < len(encoded_dataset[testset_key]), 'Starting index %d is larger than dataset length %d' % (args.start_index, len(encoded_dataset[testset_key]))
     end_index = min(args.start_index + args.num_samples, len(encoded_dataset[testset_key]))
     adv_losses, ref_losses, perp_losses, entropies = torch.zeros(end_index - args.start_index, args.num_iters), torch.zeros(end_index - args.start_index, args.num_iters), torch.zeros(end_index - args.start_index, args.num_iters), torch.zeros(end_index - args.start_index, args.num_iters)
-    current_results = pd.read_csv("results.csv")
+    # current_results = pd.read_csv("results.csv")
     try:
         start1 = time.time()
         for idx in range(args.start_index, end_index):
