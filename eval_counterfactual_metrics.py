@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import argparse
 import pandas as pd
 import torch
@@ -22,7 +21,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Benchmark arguments")
 
     # Add positional arguments
-    parser.add_argument("-path_csv", required=True, help="Path to the CSV file containing the original and generated text.")
+    parser.add_argument("-csv_path", required=True, help="Path to the CSV file containing the original and generated text.")
     parser.add_argument("-task", required=True, help="Name of the task. Currently, only IMDB and SNLI are supported.", choices=['imdb', 'snli'])
 
     # Add optional arguments
@@ -42,7 +41,8 @@ if __name__ == '__main__':
     metrics = Metrics()
 
     #Load data
-    df = pd.read_csv(args.path_csv)
+    df = pd.read_csv(args.csv_path)
+    df = df.iloc[:3]
     df = df.dropna()
     # df = df[df['gen_text'] != "-1"]
     #Calculate metrics
@@ -75,7 +75,7 @@ if __name__ == '__main__':
                 logits = classifier(**inputs).logits
             probabilities = F.softmax(logits, dim=1)
             pred_probs+=probabilities
-           
+            
             predicted_class_ids = torch.argmax(logits, axis=1).tolist()
             pred_edit_labels.extend(predicted_class_ids)
         diff_probs =  [float(tensor[label]) - org_prob for org_prob, tensor, label in zip(orig_contrast_probs, pred_probs, contrast_class_ids)]
@@ -126,19 +126,13 @@ if __name__ == '__main__':
         pred_edit_premise_probs = []
         pred_edit_hypo_probs = []
         pred_orig_probs = []
-        if "crest" in args.path_csv:
-            inputs = tokenizer(list_gen_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
-        else:
-            inputs = tokenizer(list_orig_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        inputs = tokenizer(list_orig_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
         with torch.no_grad():
             logits = classifier(**inputs).logits
         predicted_class_ids = torch.argmax(logits, axis=1).tolist()
         pred_edit_hypo_probs = torch.max(F.softmax(logits, dim=1), axis=1).values.tolist()
         pred_edit_hypothesis_labels.extend(predicted_class_ids)
-        if "crest" in args.path_csv:
-            inputs = tokenizer(list_gen_premise,list_gen_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
-        else:
-            inputs = tokenizer(list_gen_premise,list_orig_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
+        inputs = tokenizer(list_gen_premise,list_orig_hypothesis, return_tensors="pt", padding=True, truncation=True, max_length=128)
         with torch.no_grad():
             logits = classifier(**inputs).logits
         predicted_class_ids = torch.argmax(logits, axis=1).tolist()
@@ -203,4 +197,4 @@ if __name__ == '__main__':
         print(f"Distance both all: {dist_all}" )
 
     if args.return_csv:
-        df.to_csv(f"{args.path_csv.split('.')[0]}_auto_eval.csv", index=False)
+        df.to_csv(f"{args.csv_path.split('.')[0]}_auto_eval.csv", index=False)

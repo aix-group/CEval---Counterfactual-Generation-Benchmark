@@ -2,7 +2,6 @@
 import argparse
 import transformers
 import torch
-import json
 import pandas as pd
 from openai import OpenAI
 import time
@@ -30,10 +29,9 @@ def cut_continuous_repetitions(string, max_repetitions):
 
 
 class LLMEvaluator:
-    def __init__(self, task, method, llm_model, batch_size=20, temperature=0.7):
+    def __init__(self, task, llm_model, batch_size=20, temperature=0.7):
         
         self.task = task
-        self.method = method
         if self.task == "imdb":
             self.topic = "movie review"
         else:
@@ -79,13 +77,13 @@ Note: Please take the time to fully read and understand the {self.topic}. We wil
                         "fluency": fluency_prompt}
     def evaluate_text(self, df):
         for k_question, question in self.dict_questions.items():
-            self.file_prompt = open(f"raw_text/{self.task}_{k_question}_{self.method}_prompt_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
-            self.file_answer = open(f"raw_text/{self.task}_{k_question}_{self.method}_answer_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
+            self.file_prompt = open(f"raw_text/{self.task}_{k_question}_prompt_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
+            self.file_answer = open(f"raw_text/{self.task}_{k_question}_answer_{self.model_name}_{self.temperature}_{date_string}.txt", 'w')
             if self.task == "imdb":
                 df = self.evaluate_single_text(df,k_question,question)
             if self.task == "snli":
                 df = self.evaluate_pair_text(df,k_question,question)
-        df.to_csv(f"results/{self.task}/{self.method}/eval_{self.model_name}_{self.temperature}_{date_string}.csv", index = False) 
+        df.to_csv(f"results/{self.task}/eval_{self.model_name}_{self.temperature}_{date_string}.csv", index = False) 
     def gpt_evaluate(self, list_prompts, file_answer, list_scores):
         for prompt in list_prompts:
             prompts = [
@@ -144,13 +142,14 @@ Note: Please take the time to fully read and understand the {self.topic}. We wil
         return list_scores
     def evaluate_pair_text(self,df, k_question, question):
         
-        if self.method == "crest":
-            df['gen_premise'] = df['gen_text'].apply(lambda x: x.split(".")[0])
-            df['gen_hypothesis'] = df['gen_text'].apply(lambda x: x.split(".")[1])
-            map_lists = {"gen":zip(df['gen_premise'], df['gen_hypothesis'])}
-        else:
-            map_lists = {"premise_gen":zip(df['gen_premise'], df['orig_hypothesis']),
-                    "hypothesis_gen":zip(df['orig_premise'], df['gen_hypothesis'])}
+        # if self.method == "crest":
+        #     df['gen_premise'] = df['gen_text'].apply(lambda x: x.split(".")[0])
+        #     df['gen_hypothesis'] = df['gen_text'].apply(lambda x: x.split(".")[1])
+        #     map_lists = {"gen":zip(df['gen_premise'], df['gen_hypothesis'])}
+        # else:
+        map_lists = {"premise_gen":zip(df['gen_premise'], df['orig_hypothesis']),
+                "hypothesis_gen":zip(df['orig_premise'], df['gen_hypothesis'])}
+        
         for name,pairs in map_lists.items():
             list_prompts  = []
             list_scores = []
@@ -205,22 +204,22 @@ def get_args():
     parser = argparse.ArgumentParser(description="LLMs evaluation")
 
     # Add positional arguments
-    parser.add_argument("-method", required=True, help="results of method for evaluation")
+    parser.add_argument("-csv_path", required=True, help="path to the csv file that needs to be evaluate")
+    parser.add_argument("-method", default=None, help="method name")
     parser.add_argument("-task", required=True, help="Name of the task. Currently, only IMDB and SNLI are supported.", choices=['imdb', 'snli'])
 
     # Add optional arguments
     parser.add_argument("-batch_size", type=int, default=100, help="Batch size for evaluation.")
     parser.add_argument("-temperature", type=float, default=0.2, help="Temperature for evaluation.")
-    parser.add_argument("-llm_model", required=True, help="choose model used for evaluation", choices=['gpt', 'mistral'])
+    parser.add_argument("-eval_model", required=True, help="choose model used for text quality evaluation, either gpt or mistral", choices=['gpt', 'mistral'])
 
     # Parse the command line arguments
     args = parser.parse_args()
     return args
 if __name__ == '__main__':
     args = get_args()
-    llm_eval  = LLMEvaluator(args.task, args.method, args.llm_model, args.batch_size, args.temperature)
-    print(f"{args.method}:")
-    df = pd.read_csv(f"results/{args.task}/{args.method}/results.csv")
+    llm_eval  = LLMEvaluator(args.task, args.eval_model, args.batch_size, args.temperature)
+    df = pd.read_csv(args.csv_path)
     df = df.dropna(axis=0)
     llm_eval.evaluate_text(df)
 

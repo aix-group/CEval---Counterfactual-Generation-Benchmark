@@ -60,7 +60,7 @@ def create_prompt_snli(example, target_sentence):
 Original relation: {orig_label}
 {temp}
 Target relation: {target_label}
-<new>(Edited {target_sentence}): {example_map[target_label][target_sentence]}</new>
+(Edited {target_sentence}): <new>{example_map[target_label][target_sentence]}</new>
 ######End Example#######
 
 Request: Similarly, given two sentences (premise and hypothesis) and their original relationship, determine whether they entail, contradict, or are neutral to each other. Change the {target_sentence} with minimal edits to achieve the {target_label} relation from the original one.
@@ -70,7 +70,8 @@ Premise: {sentence_1}
 Hypothesis: {sentence_2}
 [End Original Text]
 Target relation: {target_label}
-Do not make any unneccesary changes. Enclose the generated sentence within <new> tags. Do not add anything else. Make as few edits as possible. Give me only the sentence with tags."""
+Do not make any unneccesary changes. Enclose the generated sentence within <new> tags. Do not add anything else. Make as few edits as possible. Give me only the sentence with tags.
+Your sentence:"""
 #     template = f"""In the task of snli, a trained black-box classifier correctly predicted the label {orig_label}
 # for the following text. Generate a counterfactual explanation by making minimal changes to the input text,
 # so that the label changes from {orig_label} to {target_label}. Use the following definition of ‘counterfactual explanation’:
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     llm_pipeline = transformers.pipeline(
         "text-generation",
         model=llm_model,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         device_map="auto",
         tokenizer = tokenizer
     )
@@ -173,6 +174,7 @@ if __name__ == '__main__':
                 else:
                     prompt = create_prompt(example)
                 # list_prompts.append(prompt)
+                prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
                 list_chunk_prompts.append(prompt)
             
             sequences = llm_pipeline(
@@ -185,8 +187,9 @@ if __name__ == '__main__':
             )
             
             for seq in sequences:
-                prompt = seq[0]['generated_text'][0]['content']
-                answer = seq[0]['generated_text'][1]['content']
+                # prompt = seq[0]['generated_text'][0]['content']
+                # answer = seq[0]['generated_text'][1]['content']
+                prompt,answer = seq[0]['generated_text'].split("[/INST]")
 
                 #Write to file
                 with open(f"raw_text_{task}_llama_{date_string}_{temperature}_{target_sentence}.txt", 'a') as fp:
@@ -216,9 +219,9 @@ if __name__ == '__main__':
 
         end_time = time.time()
         if target_sentence == None:
-            column_name = f"llama_text_{temperature}"   
+            column_name = f"gen_text"   
         else:
-            column_name = f"llama_text_{temperature}_{target_sentence}"
+            column_name = f"gen_{target_sentence}"
         file_name = f"results/{task}/llama/llama_2_{task}_{temperature}_{date_string}.csv"
         df[column_name] = list_contrast_texts
     
