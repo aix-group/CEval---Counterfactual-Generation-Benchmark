@@ -42,3 +42,20 @@ This is the repository for the paper **CEval: A Benchmark for Evaluating Counter
   ```
 
 **Note:** The generated results required to reproduce the paper are available in the `results` folder. Simply utilize them and run the scripts to reproduce the paper.
+
+### Reference and Citation
+
+```
+Van Bach Nguyen, Jörg Schlötterer, Christin Seifert (2024). “CEval: A Benchmark for Evaluating Counterfactual Text Generation". International Natural Language Generation Conference (INLG) 2024.
+```
+
+BibTex citation:
+```
+@misc{nguyen2024ceval,
+      title={CEval: A Benchmark for Evaluating Counterfactual Text Generation}, 
+      author={Van Bach Nguyen and Jörg Schlötterer and Christin Seifert},
+      year={2024},
+      eprint={2404.17475},
+      url={https://arxiv.org/abs/2404.17475}, 
+}
+```
