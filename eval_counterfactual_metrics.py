@@ -42,7 +42,6 @@ if __name__ == '__main__':
 
     #Load data
     df = pd.read_csv(args.csv_path)
-    df = df.iloc[:3]
     df = df.dropna()
     # df = df[df['gen_text'] != "-1"]
     #Calculate metrics
