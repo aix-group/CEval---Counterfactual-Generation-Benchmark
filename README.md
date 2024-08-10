@@ -9,8 +9,9 @@ This is the repository for the paper **CEval: A Benchmark for Evaluating Counter
   pip install -r requirements.txt
   ```
 - Ensure that the generated results are available in the form of a .csv file to run the benchmark.
-  - For the IMDB task, the .csv file needs to contain 2 columns: `orig_text` and `gen_text`, corresponding to the original text and the counterfactual text. To calculate the diversity, a 3rd column called `gen_text_2` is required. An example of the .csv file can be found in `results/imdb/crowd/results.csv`.
-  - For the SNLI task, the .csv file needs to contain 4 columns: `orig_premise`, `orig_hypothesis`, `gen_premise`, and `gen_hypothesis`. An example of the .csv file can be found in `results/snli/llama_02/results.csv`.
+  - For the IMDB task, the .csv file needs to contain 2 columns: `orig_text` and `gen_text`, corresponding to the original text and the counterfactual text. To calculate the diversity, a 3rd column called `gen_text_2` is required. An example of the .csv file for imdb can be found in [`results.csv`](results/imdb/crowd/results.csv).
+
+  - For the SNLI task, the .csv file needs to contain 4 columns: `orig_premise`, `orig_hypothesis`, `gen_premise`, and `gen_hypothesis`. An example of the .csv file for snli can be found in [`results.csv`](results/snli/llama_02/results.csv).
 
 **Counterfactual Metrics:**
 - To obtain results for counterfactual metrics (e.g., fliprate, distance, etc.), execute the following command:

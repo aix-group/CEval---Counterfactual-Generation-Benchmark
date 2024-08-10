@@ -196,4 +196,4 @@ if __name__ == '__main__':
         print(f"Distance both all: {dist_all}" )
 
     if args.return_csv:
-        df.to_csv(f"{args.csv_path.split('.')[0]}_auto_eval.csv", index=False)
+        df.to_csv(f"{args.csv_path.split('.')[0]}_counterfactual.csv", index=False)
