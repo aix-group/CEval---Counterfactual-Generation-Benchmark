@@ -37,7 +37,7 @@ class LLMEvaluator:
         else:
             self.topic = "natural language inference pair"
         
-        if args.llm_model == "gpt":
+        if args.eval_model == "gpt":
             self.model_name = "gpt"
             self.llm_model = "gpt-3.5-turbo-0125"
             self.client = OpenAI()
@@ -85,7 +85,7 @@ Note: Please take the time to fully read and understand the {self.topic}. We wil
             if self.task == "snli":
                 df = self.evaluate_pair_text(df,k_question,question)
         # df.to_csv(f"results/{self.task}/eval_{self.model_name}_{self.temperature}_{date_string}.csv", index = False) 
-        df.to_csv(f"{args.csv_path.split('.')[0]}_text_quality_{self.model_name}_{self.temperature}.csv", index=False)
+        df.to_csv(f"{args.csv_path.split('.csv')[0]}_text_quality_{self.model_name}_{self.temperature}.csv", index=False)
     def gpt_evaluate(self, list_prompts, file_answer, list_scores):
         for prompt in list_prompts:
             prompts = [
